@@ -1,0 +1,5 @@
+#!/bin/sh
+/usr/bin/valkey-server&
+while ! echo | nc 127.0.0.1 6379; do sleep 0.1; done
+clear
+/usr/bin/valkey-cli

@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TryValkey</title>
+
+    <!-- Scripts -->
+    <script src="../build/libv86.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xterm@4.16.0/lib/xterm.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
+    <script src="../src/browser/serial_xterm.js"></script>
+
+    <!-- Styles -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@4.16.0/css/xterm.css" />
+    
+    <style>
+        /* General Styles */
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Open Sans', sans-serif;
+            background: #f5f5f7;
+            color: #333;
+            line-height: 1.6;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
+            min-height: 100vh;
+            padding: 40px 20px;
+        }
+
+        /* Header Section */
+        .header {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 40px;
+        }
+
+        .header svg {
+            width: 50px;
+            height: 50px;
+            margin-right: 15px;
+        }
+
+        /* Container Styles */
+        .container {
+            background: rgb(47, 47, 47);
+            border-radius: 16px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            padding: 10px;
+            overflow-y: hidden;
+        }
+
+        h1, h3 {
+            text-align: center;
+        }
+
+        h1 {
+            font-size: 1.8rem;
+            color: #003366;
+            font-weight: 600;
+        }
+
+        /* Introduction Text */
+        h3 {
+            font-size: 1.2rem;
+            font-weight: 400;
+            color: #555;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        #terminal-container {
+            width: 100%;
+            height: 100%;
+            background: #000;
+            color: #fff;
+            border: none;
+            overflow-y: hidden;
+            overflow-x: hidden;
+
+        }
+
+        #loadingContainer {
+            text-align: center;
+            margin-top: 20px;
+        }
+
+        #progressText {
+            font-size: 18px;
+            margin-bottom: 10px;
+        }
+
+        #progressBar {
+            width: 80%;
+            height: 20px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            background-color: #e9ecef;
+        }
+    </style>
+</head>
+<body>
+    <!-- Header with Valkey Logo -->
+    <div class="header">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 73" fill="none">
+            <g id="Group-copy">
+                <path id="Path" fill="#123678" fill-rule="evenodd" stroke="none" d="M 13.482285 60.694962 L 0.998384 52.884399 L 0.998384 19.502914 L 31.527868 2.001205 L 61.317604 19.532024 L 61.317604 54.64489 L 31.054855 71.68927 L 20.548372 65.115807 L 20.548372 51.041328 L 20.548372 49.119896 L 14.851504 45.555508 L 14.851504 27.453159 L 31.346497 17.99712 L 47.464485 27.482262 L 47.464485 46.451157 L 34.703495 53.638138 L 34.703495 45.998573 C 38.52874 44.52552 41.274452 40.739189 41.274452 36.270489 C 41.274452 30.510658 36.712814 25.88438 31.158138 25.88438 C 25.603172 25.88438 21.041817 30.510658 21.041817 36.270489 C 21.041817 40.739189 23.787249 44.52552 27.612494 45.998573 L 27.612494 60.473576 L 31.261133 62.756348 L 53.635483 50.15464 L 53.635483 23.924595 L 31.477489 10.884869 L 8.680504 23.953705 L 8.680504 48.628967 L 13.482285 51.633297 L 13.482285 60.694962 Z M 31.158138 31.498383 C 33.671822 31.498383 35.660439 33.664162 35.660439 36.270489 C 35.660439 38.876804 33.671822 41.042587 31.158138 41.042587 C 28.644447 41.042587 26.655558 38.876804 26.655558 36.270489 C 26.655558 33.664162 28.644447 31.498383 31.158138 31.498383 Z"/>
+            </g>
+        </svg>
+        <h1>Try Valkey</h1>
+    </div>
+    
+    <h3>This is an in-browser Valkey CLI. Try it out below:</h3>
+    <div class="container">
+        <div id="terminal-container"></div>
+    </div>
+
+    <!-- Loading Section -->
+    <div id="loadingContainer">
+        <p id="progressText">Preparing to load...</p>
+        <progress id="progressBar" value="0" max="100"></progress>
+    </div>
+
+    <script>
+        "use strict";
+
+        const FILE_URL = "../images/valkey-serial.bin.gz";  // Path to the .gz file
+        const CACHE_KEY = "valkey_binary_cache";
+        const LAST_MODIFIED_KEY = "valkey_last_modified";
+        let emulator;
+
+        // Open or create IndexedDB
+        async function openIndexedDB() {
+            return new Promise((resolve, reject) => {
+                const request = indexedDB.open("binaryCacheDB", 1);
+
+                request.onerror = () => reject("Error opening IndexedDB");
+                request.onsuccess = () => resolve(request.result);
+
+                request.onupgradeneeded = (event) => {
+                    const db = event.target.result;
+                    db.createObjectStore("cache", { keyPath: "key" });
+                };
+            });
+        }
+
+        // Retrieve binary from cache
+        async function getCachedBinary(db) {
+            return new Promise((resolve, reject) => {
+                const transaction = db.transaction(["cache"], "readonly");
+                const objectStore = transaction.objectStore("cache");
+                const request = objectStore.get(CACHE_KEY);
+
+                request.onerror = () => reject("Error retrieving cached binary");
+                request.onsuccess = () => resolve(request.result ? request.result.data : null);
+            });
+        }
+
+        // Save binary to cache
+        async function saveBinaryToCache(db, data) {
+            return new Promise((resolve, reject) => {
+                const transaction = db.transaction(["cache"], "readwrite");
+                const objectStore = transaction.objectStore("cache");
+                const request = objectStore.put({ key: CACHE_KEY, data });
+
+                request.onerror = () => reject("Error saving binary to cache");
+                request.onsuccess = () => resolve();
+            });
+        }
+
+        // Check if binary is updated
+        async function checkIfUpdated() {
+            return new Promise((resolve, reject) => {
+                const xhr = new XMLHttpRequest();
+                xhr.open("HEAD", FILE_URL, true);
+
+                xhr.onload = () => {
+                    const serverLastModified = xhr.getResponseHeader("Last-Modified");
+                    const cachedLastModified = localStorage.getItem(LAST_MODIFIED_KEY);
+
+                    if (!serverLastModified || serverLastModified !== cachedLastModified) {
+                        localStorage.setItem(LAST_MODIFIED_KEY, serverLastModified);
+                        resolve(true);
+                    } else {
+                        resolve(false);
+                    }
+                };
+
+                xhr.onerror = () => reject("Error checking file version");
+                xhr.send();
+            });
+        }
+
+        // Download and decompress binary
+        function downloadAndDecompressBinary(callback) {
+            const xhr = new XMLHttpRequest();
+            xhr.open("GET", FILE_URL, true);
+            xhr.responseType = "arraybuffer";
+
+            xhr.onprogress = (event) => {
+                if (event.lengthComputable) {
+                    const percentComplete = (event.loaded / event.total) * 100;
+                    document.getElementById("progressBar").value = percentComplete;
+                }
+            };
+
+            xhr.onload = () => {
+                if (xhr.status === 200) {
+                    document.getElementById("progressText").innerText = "Decompressing image...";
+                    const decompressedData = pako.ungzip(new Uint8Array(xhr.response));
+                    callback(decompressedData);
+                }
+            };
+
+            xhr.onerror = () => {
+                document.getElementById("progressText").innerText = "Download failed!";
+            };
+
+            xhr.send();
+        }
+
+        async function loadEmulator(decompressedData) {
+            const progressText = document.getElementById("progressText");
+
+            const blob = new Blob([decompressedData], { type: "application/octet-stream" });
+            const imgUrl = URL.createObjectURL(blob);
+
+            progressText.innerText = "Starting emulator...";
+
+            emulator = new V86({
+                wasm_path: "../build/v86.wasm",
+                memory_size: 512 * 1024 * 1024,
+                vga_memory_size: 8 * 1024 * 1024,
+                bios: { url: "../bios/seabios.bin" },
+                vga_bios: { url: "../bios/vgabios.bin" },
+                filesystem: {
+                    baseurl: "../images/alpine-rootfs-flat-new",
+                    basefs: "../images/alpine-fs-new.json",
+                },
+                autostart: true,
+                bzimage_initrd_from_filesystem: true,
+                cmdline: "rw root=host9p rootfstype=9p rootflags=trans=virtio,cache=none modules=virtio_pci tsc=reliable",
+                initial_state: { url: imgUrl },
+            });
+
+            const serialAdapter = new SerialAdapterXtermJS(document.getElementById('terminal-container'), emulator.bus);
+            serialAdapter.show();
+
+            document.getElementById("loadingContainer").style.display = "none";
+        }
+
+        window.onload = async function () {
+            const db = await openIndexedDB();
+
+            try {
+                const needsDownload = await checkIfUpdated();
+
+                if (needsDownload) {
+                    downloadAndDecompressBinary(async (decompressedData) => {
+                        await saveBinaryToCache(db, decompressedData);
+                        loadEmulator(decompressedData);
+                    });
+                } else {
+                    const cachedBinary = await getCachedBinary(db);
+                    if (cachedBinary) {
+                        loadEmulator(cachedBinary);
+                    } else {
+                        downloadAndDecompressBinary(async (decompressedData) => {
+                            await saveBinaryToCache(db, decompressedData);
+                            loadEmulator(decompressedData);
+                        });
+                    }
+                }
+            } catch (error) {
+                console.error("Error loading binary: ", error);
+                document.getElementById("progressText").innerText = "Failed to load binary.";
+            }
+        };
+    </script>
+</body>
+</html>
