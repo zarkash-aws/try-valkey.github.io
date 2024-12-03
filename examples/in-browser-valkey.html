@@ -251,7 +251,7 @@
                 },
                 autostart: true,
                 bzimage_initrd_from_filesystem: true,
-                cmdline: "rw root=host9p rootfstype=9p rootflags=trans=virtio,cache=none modules=virtio_pci tsc=reliable",
+                cmdline: "rw root=host9p rootfstype=9p rootflags=trans=virtio,cache=loose modules=virtio_pci tsc=reliable init_on_free=on",
                 initial_state: { url: imgUrl },
             });
 
