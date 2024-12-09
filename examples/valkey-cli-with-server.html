@@ -112,9 +112,11 @@
             max-height: 100%;
             width: 100%;
         }
+
         #terminal-container {
             overflow-y: hidden; /* xterm container already has scroll bar */
         }
+
         #log-terminal-container {
             overflow-y: scroll; /* Enable vertical scrolling for both sections */
         }
@@ -282,6 +284,8 @@
                 },
                 autostart: true,
                 bzimage_initrd_from_filesystem: true,
+                disable_mouse: true,
+                disable_keyboard: true,
                 cmdline: "rw root=host9p rootfstype=9p rootflags=trans=virtio,cache=loose modules=virtio_pci tsc=reliable",
                 initial_state: { url: imgUrl },
             });
@@ -300,23 +304,34 @@
             updateLogWindow(logTerminalDiv);
         }
 
+        let lastLogLineNumber = 0;
         async function updateLogWindow(logTerminalDiv) {
             try {
                 const content = await emulator.read_file(LOG_FILE_PATH);
                 if (content) {
-                    logTerminalDiv.textContent = '';
-                    const lines = new TextDecoder().decode(content).split('\n');
-                    lines.forEach(line => {
-                        const logLine = document.createElement('div');
-                        logLine.textContent = line;
-                        logTerminalDiv.appendChild(logLine);
-                    });
+                    const decodedContent = new TextDecoder().decode(content);
+                    const lines = decodedContent.split('\n');
+                    
+                    if (lines.length > lastLogLineNumber) {
+                    // Append only lines after the last processed line number.
+                    for (let i = lastLogLineNumber-1; i < lines.length; i++) {
+                        const line = lines[i];
+                        if (line) { // Ignore empty lines
+                            const logLine = document.createElement('div');
+                            logLine.textContent = line;
+                            logTerminalDiv.appendChild(logLine);
+                        }
+                    }
+                    
+                    // Update the last processed line number
+                    lastLogLineNumber = lines.length;
                     logTerminalDiv.scrollTop = logTerminalDiv.scrollHeight;
+                    }
                 }
             } catch (error) {
                 console.error("Error reading log file:", error);
             }
-        }
+    }
 
         function startLogUpdateInterval() {
             const logTerminalDiv = document.getElementById('log-terminal-container');
