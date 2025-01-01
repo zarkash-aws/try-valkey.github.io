@@ -7,13 +7,12 @@
 
     <!-- Scripts -->
     <script src="../build/libv86.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/xterm@4.16.0/lib/xterm.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
+    <script src="../build/xterm.min.js"></script>
+    <script src="../build/pako.min.js"></script>
     <script src="../src/browser/serial_xterm.js"></script>
-    <link href='https://fonts.googleapis.com/css?family=Open Sans' rel='stylesheet'>
     <!-- Styles -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@4.16.0/css/xterm.css" />
-    <link href='https://fonts.googleapis.com/css?family=Open Sans' rel='stylesheet'>
+    <link rel="stylesheet" href="../build/xterm.css" />
+    <link rel="stylesheet" href='https://fonts.googleapis.com/css?family=Open Sans'>
 
     <style>
         /* General Styles */
@@ -135,8 +134,7 @@
 
     <script>
         "use strict";
-
-        const FILE_URL = "../images/try-valkey.bin.gz";  // Path to the .gz file
+        const FILE_URL = "../images/v8.0.1.bin.gz";  // Path to the .gz file
         const CACHE_KEY = "valkey_binary_cache";
         const LAST_MODIFIED_KEY = "valkey_last_modified";
         let emulator;
@@ -242,12 +240,10 @@
             emulator = new V86({
                 wasm_path: "../build/v86.wasm",
                 memory_size: 512 * 1024 * 1024,
-                vga_memory_size: 8 * 1024 * 1024,
                 bios: { url: "../bios/seabios.bin" },
-                vga_bios: { url: "../bios/vgabios.bin" },
                 filesystem: {
                     baseurl: "../images/alpine-rootfs-flat-new",
-                    basefs: "../images/alpine-fs-new.json",
+                    basefs: "../images/alpine-rootfs-flat-new.json",
                 },
                 autostart: true,
                 bzimage_initrd_from_filesystem: true,
@@ -255,12 +251,50 @@
                 initial_state: { url: imgUrl },
                 disable_mouse: true,
                 disable_keyboard: true,
+                disable_speaker: true,
             });
+
+            await new Promise(resolve => emulator.add_listener("emulator-ready", resolve));
 
             const serialAdapter = new SerialAdapterXtermJS(document.getElementById('terminal-container'), emulator.bus);
             serialAdapter.show();
 
             document.getElementById("loadingContainer").style.display = "none";
+
+            if (emulator) {
+                resetInactivityTimer();
+                ["mousemove", "keydown", "touchstart"].forEach(event => {
+                    window.addEventListener(event, resetInactivityTimer);
+                });
+                
+                serialAdapter.term.onKey(() => resetInactivityTimer()); // Typing
+                serialAdapter.term.onData(() => resetInactivityTimer()); // Sending data
+                serialAdapter.term.onCursorMove(() => resetInactivityTimer()); // Mouse activity
+            };
+        }
+
+        let inactivityTimeout;
+        const INACTIVITY_LIMIT = 60*1000*10 //inactivity limit is 10 minutes
+
+        function resetInactivityTimer() {
+            if (!emulator) {
+                console.warn("Emulator is not initialized yet.");
+                return;
+            }
+
+            clearTimeout(inactivityTimeout);
+
+            inactivityTimeout = setTimeout(() => {
+                if (emulator.is_running()) {
+                        console.log("VM paused due to inactivity.");
+                        emulator.stop();
+                    }
+            }, INACTIVITY_LIMIT);
+
+            if (!emulator.is_running()) {
+                console.log("VM resumed");
+                emulator.run();
+            }
         }
 
         window.onload = async function () {

@@ -1,0 +1,17 @@
+.valkey-rundeps=20241223.145715
+agetty
+alpine-base
+alpine-baselayout
+alpine-conf
+alpine-keys
+apk-tools
+busybox
+gcompat
+libc-utils
+libc6-compat
+linux-firmware-none
+linux-firmware-sb16
+linux-lts
+openrc
+setpriv
+tzdata
